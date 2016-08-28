@@ -1,0 +1,162 @@
+---
+title: "Automatic or manual transmission?"
+author: "Joanne Breitfelder"
+date: "11 Aug 2016"
+output: pdf_document
+---
+
+In 1974, *Motor Trend* magazine published the main caracteristics of 32 automobiles, including fuel consumption and 10 aspects of automobile design and performance. Today, we are interested in exploring the relationship between these different variables and miles per gallon (hereafter MPG). We are particularly interested in quantifying the MPG difference between automatic and manual transmissions and answer the following question : which is better for MPG between automatic and manual transmission?
+
+# Exploratory data analysis
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(knitr)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
+library(GGally)
+```
+
+```{r}
+data <- mtcars
+data$am <- factor(data$am, labels=c("automatic", "manual"))
+kable(head(data, 3))
+```
+
+By looking at the graphics shown in the **appendix 1**, we can already infer that manual transmission is better for MPG. Let's test this hipothesis with a one-sided T-test :
+
+```{r}
+t.test(filter(data, am=="manual")$mpg,
+       filter(data, am=="automatic")$mpg,
+       alternative="greater", var.equal=FALSE)$p.value
+```
+
+The p-value is well below 0.05, which indicates that we can adopt the alternative hyothesis : *the true difference in means is greater than 0*. However, this relationship assumes that the other variables are left constant, which is not true. We therefore need to include them in our study.
+
+# Regression models
+
+## Univariate Linear Regression
+
+```{r, echo=FALSE}
+fit <- lm(mpg~am, data)
+```
+
+Let's first adjust a simple linear model between `am` and `mpg`, with the command `lm(mpg~am, data)`. This regression gives a R-squared value of **`r summary(fit)$r.squared`** and the following coefficients :
+
+```{r, echo=FALSE}
+kable(coef(summary(fit)))
+```
+
+The coefficients suggest that manual transmission cars have in average 7.245 $\pm$ 1.764 MPGs more than automatic transmission cars, which confirms the result of our t-test. However, the $R^2$ indicates that this model explains only 35% of the data variance. As said before, some information is missing and we need to include more variables.
+
+## Multivariate regression analysis
+
+```{r, echo=FALSE}
+fit <- lm(mpg~., data)
+```
+
+Let's now include all the variables in our model, with the command `lm(mpg~., data)`. We now get a R-squared of **`r summary(fit)$r.squared`** and the following coefficients (rounded for clarity):
+
+```{r, echo=FALSE}
+kable(t(round(coef(summary(fit)), 2)))
+```
+
+This new model explains 86% of the variance, which is much improved compared to before. However, none of the coefficients is associated to a p-value lower than 0.005, and almost all standard errors are bigger than the estimates! The coefficients are therefore not significative and we can not conclude. 
+
+To go further in the variables selection, let's run a stepwise algorithm:
+
+```{r}
+stepmodel <- step(lm(mpg~., data), trace=FALSE)
+kable(coef(summary(stepmodel)))
+```
+
+As we can see, the best model includes the *transmission mode*, the *cars weight* and the *quarter mile time*. These three variables alone explain about 84% of the MPG variance ($R^2 = `r summary(stepmodel)$r.squared`$) and all the coefficient's p-values are significant : a very convincing result!
+
+### Regression diagnostics
+
+Based on the diagnostic plots shown in **Appendix 2**, we can say that the residuals seem to show homogeneity (points are randomly distributed in the *Scale-Location* plot), normality (points are close to the line in the *Q-Q* plot), and independence (no pattern in the *Residuals vs. Fitted* plot). 
+
+### Results interpretation
+
+Thanks to the last model, we can finally answer the initial question. In average, manual transmission cars have 2.93 $\pm$ 1.41 MPGs more than automatic transmission cars, and this value is significant at a 95% confidence level (p-value of 0.047). We can note that the difference between the two transmission modes is much lower than the one we obtained with the simple linear regression, which shows the importance of including all relevant variables in the fitting process. 
+
+# Appendix
+
+## Appendix 1: Exploratory data analysis graphics
+
+### Variation of each variable depending on the transmission mode:
+
+```{r, echo=FALSE, fig.width=10, fig.height=5}
+ggplot(melt(data, id.vars="am"), aes(x=variable, y=value)) +
+        geom_boxplot(aes(fill=am)) +
+        facet_wrap(~variable, scale="free", ncol=5)
+```
+
+### Focus on the MPG:
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7}
+my_dens <- function(data, mapping, ...) {
+  ggplot(data=data, mapping=mapping) +
+    geom_density(..., alpha=0.6, color=NA) 
+}
+
+ggpairs(data, aes(color=am), 
+        diag=list(continuous=my_dens),
+        columns=c("mpg", "am"))
+```
+
+## Appendix 2: Regression diagnostics
+
+```{r}
+par(mfrow=c(2, 2))
+plot(stepmodel, which=1:4)
+```
+
+## Appendix 3: R code used in this study
+
+```{r, eval=FALSE}
+library(knitr); library(reshape2); library(ggplot2)
+library(dplyr); library(GGally)
+
+data <- mtcars
+data$am <- factor(data$am, labels=c("automatic", "manual"))
+
+# Exploratory graphics:
+ggplot(melt(data, id.vars="am"), aes(x=variable, y=value)) +
+        geom_boxplot(aes(fill=am)) + facet_wrap(~variable, scale="free", ncol=5)
+
+ggpairs(data, aes(color=am), columns=c("mpg", "am"))
+
+# T-test:
+t.test(filter(data, am=="manual")$mpg, filter(data, am=="automatic")$mpg,
+       alternative="greater", var.equal=FALSE)$p.value
+
+# Simple linear regression:
+kable(coef(summary(lm(mpg~am, data))))
+summary(lm(mpg~am, data))$r.squared
+
+# Linear regression with all variables:
+kable(t(round(coef(summary(lm(mpg~., data))), 2)))
+summary(lm(mpg~., data))$r.squared
+
+# "Step" linear regression and summary of the best model:
+kable(coef(summary(step(lm(mpg~., data), trace=FALSE))))
+summary(step(lm(mpg~., data), trace=FALSE))$r.squared
+
+# Residuals diagnostic
+par(mfrow=c(2, 2))
+plot(step(lm(mpg~., data), trace=FALSE), which=1:4)
+```
+
+## Appendix 4: Environment
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
